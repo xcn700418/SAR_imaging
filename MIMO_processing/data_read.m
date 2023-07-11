@@ -1,20 +1,28 @@
 % read binary files
-N_files = 3;
+clc;close all; clear all;
+N_files = 71;
 recorded_data = cell(1, N_files);
-DirName = 'C:\ti\mmwave_studio_02_01_01_00\mmWaveStudio\PostProc\adc_data\';
-fileStart = 'slave';
-fileEnd = '_0000_data.bin';
-N_Tx = 12;
-N_Rx = 16;
+DirName = 'C:\ti\mmwave_studio_02_01_01_00\mmWaveStudio\PostProc\0711\';
+fileStart = 'master_';
+fileEnd = '_data.bin';
+N_Tx = 3;
+N_Rx = 4;
 N_fast = 256;
 N_slow = 64;
-N_frames = 10;
+N_frames = 8;
 chunkSize = N_Tx*N_Rx*N_fast*N_slow*2;
 for fileNameIdx = 1:N_files
-    Idx = fileNameIdx;
+    Idx = fileNameIdx-1;
     fileNum = num2str(Idx, '%01d');
+    if Idx < 10
+        cfileNum = ['000' fileNum];
+    elseif (Idx < 100) && (Idx >= 10)
+        cfileNum = ['00' fileNum];
+    else
+        cfileNum = ['0' fileNum];
+    end
 
-    fileName = [fileStart fileNum fileEnd];
+    fileName = [fileStart cfileNum fileEnd];
 
  
 
@@ -42,7 +50,7 @@ for fileNameIdx = 1:N_files
     inputLoadingPosition = 0;
 
 
-    fullData = cell(1, N_frames);
+    fullData = zeros(N_fast, N_slow, N_Rx*N_Tx, N_frames);
 
     for indexFrames=1:N_frames
 
@@ -77,11 +85,11 @@ for fileNameIdx = 1:N_files
         adcOut = permute(adcOut, [1, 3, 2]);
 
 
-        fullData{indexFrames} = adcOut;
+        fullData(:,:,:,indexFrames) = adcOut;
 
 
     end
-
+    
     recorded_data{fileNameIdx} = fullData;
 
 end
