@@ -18,4 +18,4 @@ ErrStatus =RtttNetClientAPI.RtttNetClient.SendCommand(Lua_String);
 
 strFilename2 = 'C:\\ti\\mmwave_studio_02_01_01_00\\mmWaveStudio\\Scripts\\Cascade\\Cascade_Capture.lua';
 Lua_String2 = sprintf('dofile("%s")',strFilename2);
-ErrStatus =RtttNetClientAPI.RtttNetClient.SendCommand(Lua_String2);
+%ErrStatus =RtttNetClientAPI.RtttNetClient.SendCommand(Lua_String2);
