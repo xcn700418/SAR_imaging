@@ -1,0 +1,156 @@
+%% Range-doppler algorithm
+clear;close all;clc;
+ 
+%% parameter definition
+% signal parameter
+c = physconst("Lightspeed");
+fc = 1e9;                               % carrier frequency
+lambda = c/fc;                          % wavelength
+ 
+% detection range
+% Az0 and AL form the detection area with a square shape
+Az0 = 10e3;                             
+AL = 1000;
+% range of the detection area
+Azmin = Az0-AL/2;                      
+Azmax = Az0+AL/2;          
+% ground distance between detection area and the radar sensor
+Rg0 = 10e3;                             
+RgL = 1000;                             
+ 
+% parameter for the radar platform
+vr = 100;                               % speed of radar platform
+H = 3000;                               % height of the radar
+% slant range : range between radar and the center of detection area
+R0 = sqrt(Rg0^2+H^2);                   
+ 
+% Antenna parameter
+D = 4;                                  % antenna size
+% according to synthetic beam width βs = λ /(2* La) = D / (2* R)
+La = lambda*R0/D;                       % synthetic aperture length ???
+Ta = La/vr;                             % synthetic aperture time
+ 
+% azimuth and velocity dimension parameter
+Ka = -2*vr^2/lambda/R0;                 % frequency-modulated rate
+Ba = abs(Ka*Ta);                        % bandwidth
+PRF = 1.2*Ba;                           % pulse repetition frequency
+Nslow = ceil((Azmax-Azmin+La)/vr*PRF);  % number of chirp
+Nslow = 2^nextpow2(Nslow);              % velocity fft point 
+ta = linspace((Azmin-La/2)/vr,(Azmax+La/2)/vr,Nslow);  % time axis
+PRF = 1/((Azmax-Azmin+La)/vr/Nslow);    % pulse repetition frequency
+ 
+% range dimension/fast time parameter
+Tw = 5e-6;                              % time for one chirp
+Br = 30e6;                              % bandwidth
+Kr = Br/Tw;                             % frequency-modulated rate
+Fr = 2*Br;                              % sampling rate
+Rmin = sqrt((Rg0-RgL/2)^2+H^2);
+Rmax = sqrt((Rg0+RgL/2)^2+H^2+(La/2)^2);
+Nfast = ceil(2*(Rmax-Rmin)/c*Fr+Tw*Fr); % 
+Nfast = 2^nextpow2(Nfast);              % range FFT point
+tr = linspace(2*Rmin/c,2*Rmax/c+Tw,Nfast);  
+Fr = 1/((2*Rmax/c+Tw-2*Rmin/c)/Nfast);  % sampling rate
+ 
+% resolution
+Dr = c/(2*Br);                                  % range resolution
+Da = D/2;                               % azimuth resolution
+ 
+% simulation point
+Ntarget = 4;                            % total target point
+Ptarget = [Az0-50,Rg0-100,1              % target posititon in detection area
+         Az0+50,Rg0-50,1
+         Az0-50,Rg0+50,1
+         Az0+50,Rg0+100,1];  
+  
+  
+fprintf('Synthetic aperture size：%.1fm\n',La);     
+disp('Target location /slant range：');
+disp([Ptarget(:,1),Ptarget(:,2),sqrt(Ptarget(:,2).^2+H^2)])
+ 
+%% detection area discretization (both range and azimuth)
+deltaR = 1/Fr*c/2;
+R = Rmin:1/Fr*c/2:Rmax;  % slant range axis
+Nr = length(R);
+Az = Azmin:vr/PRF:Azmax; % azimuth axis
+Na = length(Az);
+ 
+%% Reflected signal model
+snr = 0;                                
+Srnm = zeros(Nslow,Nfast);
+
+for k = 1:1:Ntarget
+    sigmak = Ptarget(k,3);
+    Azk = ta*vr-Ptarget(k,1);             %Ra(t)
+    Rk = sqrt(Azk.^2+Ptarget(k,2)^2+H^2); %R(t)
+    tauk = 2*Rk/c;
+    tk = ones(Nslow,1)*tr-tauk'*ones(1,Nfast);
+    phasek = pi*Kr*tk.^2-(4*pi/lambda)*(Rk'*ones(1,Nfast));
+    s = sigmak*exp(1i*phasek).*(0<tk&tk<Tw).*((abs(Azk)<La/2)'*ones(1,Nfast));
+    Srnm = Srnm+s;
+end
+lb = min(find(Srnm(:,295)));
+hb = max(find(Srnm(:,295)));
+figure;
+subplot(2,1,1);
+plot(ta(lb:hb),Srnm(lb:hb,295),'r');
+xlabel("slow time axis");
+ylabel("amplitude");
+title("Signal model in slow time");
+
+lb = min(find(Srnm(940,:)));
+hb = max(find(Srnm(940,:)));
+subplot(2,1,2);
+plot(tr(lb:hb),Srnm(940,lb:hb),'b');
+xlabel("fast time axis");
+ylabel("amplitude");
+title("Signal model in fast time");
+%% Range Compression
+thr = tr-2*Rmin/c;
+hrc = exp(1i*pi*Kr*thr.^2).*(0<thr&thr<Tw);  % match filter for range dimension
+hrcf = conj(fft(hrc,Nfast,2));
+%hrc = conj(hrc);
+% Multiply range fft result with the match filter in frequency domain
+SARr =fft(Srnm,Nfast,2).*(ones(Nslow,1)*hrcf);
+SARr = ifft(SARr,Nfast,2);
+
+figure;
+imagesc(255-abs(SARr));                       
+xlabel('Fast time');
+ylabel('Slow time');
+title('Pulse compression in range dimension');
+colormap(gray);
+
+figure;
+Sta = round(Ta/2*PRF);
+imagesc(R,Az,255-abs(SARr(Sta:Sta+Na-1,1:Nr)));                       
+xlabel('\rightarrow\itSlant range/m');
+ylabel('\itAzimuth/m\leftarrow');
+title('Pulse compression in range dimension');
+colormap(gray);
+
+figure;
+col = round(linspace(1,Na,7));
+row =round(Nr/2)-200:round(Nr/2)+200;
+waterfall(R(row),Az(col),abs(SARr(col+Sta-1,row)));
+xlabel('Slant range/m');
+ylabel('Azimuth/m');
+title('Range Compression results from different azimuth');
+colormap(gray);
+%% Azimuth compression 
+tha = ta-Azmin/vr;
+hac = exp(1i*pi*Ka*tha.^2).*(abs(tha)<Ta/2);  % Match filter in azimtuh direction
+SARra = ifft(fft(SARr).*(conj(fft(hac)).'*ones(1,Nfast)));
+SAR = abs(SARra);
+ 
+figure;
+imagesc(255-SAR);                       
+xlabel('fast time');
+ylabel('slow time');
+title('fast-slow time pulse compression');
+colormap(gray)
+ 
+figure;
+mesh(R,Az,SAR(1:Na,1:Nr));
+xlabel('Slant range');
+ylabel('Azimuth');
+title('Sar image'),
